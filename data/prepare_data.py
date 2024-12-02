@@ -39,9 +39,9 @@ def resize_multiple(img, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=Fals
 
     return [lr_img, hr_img, sr_img]
 
-def resize_worker(img_file, sizes, resample, lmdb_save=False):
+def resize_worker(img_file, sizes, resample, lmdb_save=False, scale = 'L'): # scale = 'L' for grayscale, 'RGB' for color
     img = Image.open(img_file)
-    img = img.convert('RGB')
+    img = img.convert(scale)
     out = resize_multiple(
         img, sizes=sizes, resample=resample, lmdb_save=lmdb_save)
 
@@ -54,7 +54,6 @@ class WorkingContext():
         self.out_path = out_path
         self.env = env
         self.sizes = sizes
-
         self.counter = RawValue('i', 0)
         self.counter_lock = Lock()
 
@@ -97,9 +96,9 @@ def all_threads_inactive(worker_threads):
             return False
     return True
 
-def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False):
+def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False, scale = 'RGB'):
     resize_fn = partial(resize_worker, sizes=sizes,
-                        resample=resample, lmdb_save=lmdb_save)
+                        resample=resample, lmdb_save=lmdb_save, scale = scale)
     files = [p for p in Path(
         '{}'.format(img_path)).glob(f'**/*')]
 
@@ -160,17 +159,15 @@ def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBI
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path', '-p', type=str,
-                        default='{}/Dataset/celebahq_256'.format(Path.home()))
-    parser.add_argument('--out', '-o', type=str,
-                        default='./dataset/celebahq')
-
+    parser.add_argument('--path', '-p', type=str,default='{}/Dataset/celebahq_256'.format(Path.home()))
+    parser.add_argument('--out', '-o', type=str,default='./dataset/celebahq')
     parser.add_argument('--size', type=str, default='64,512')
-    parser.add_argument('--n_worker', type=int, default=3)
+    parser.add_argument('--n_worker', type=int, default=8)
     parser.add_argument('--resample', type=str, default='bicubic')
     # default save in png format
     parser.add_argument('--lmdb', '-l', action='store_true')
-
+    parser.add_argument('--scale', type=str, choices=['L', 'RGB'], default='RGB', 
+                        help="Image color scale: 'L' for grayscale, 'RGB' for color")
     args = parser.parse_args()
 
     resample_map = {'bilinear': Image.BILINEAR, 'bicubic': Image.BICUBIC}
@@ -179,4 +176,4 @@ if __name__ == '__main__':
 
     args.out = '{}_{}_{}'.format(args.out, sizes[0], sizes[1])
     prepare(args.path, args.out, args.n_worker,
-            sizes=sizes, resample=resample, lmdb_save=args.lmdb)
+            sizes=sizes, resample=resample, lmdb_save=args.lmdb, scale = args.scale)
