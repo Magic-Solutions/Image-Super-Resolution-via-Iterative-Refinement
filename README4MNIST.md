@@ -27,7 +27,7 @@ By using LMDB (recommended --lmdb) the dataset folder will use a LMDB structure:
 
 Note: By default the images are loaded in grayscale using -- scale L. If you want to load them in RGB use --scale RGB
 
-## Modify the config file
+## Modify the config file before training
 
 - All the training, evaluation and inference paramaters are stored in: config/sr_sr3_16_28.json
 
@@ -43,6 +43,7 @@ Note: By default the images are loaded in grayscale using -- scale L. If you wan
             "num_workers": 8,
             "use_shuffle": true,
             "data_len": -1 // -1 represents all data used in train
+            "scale": "L" // L for grayscale, RGB for color
         },
         "val": {
             "name": "mnist_val",
@@ -51,6 +52,31 @@ Note: By default the images are loaded in grayscale using -- scale L. If you wan
             "datatype": "lmdb", //lmdb or img, path of img files
             "l_resolution": 14,
             "r_resolution": 28,
-            "data_len": 50
+            "data_len": 50,     
+            "scale": "L" // L for grayscale, RGB for color
         }
     },
+
+# data pipeline 
+
+First the function create_dataset() located in data/__init__.py is called to instanciate the LRHRDataset class. The dataset is created using the dataroot, datatype, l_resolution, r_resolution, mode, data_len, use_shuffle, batch_size and num_workers parameters. 
+
+### parameters of create_dataset:
+    •   dataroot: Path to the dataset (can be a folder for images or an LMDB database).
+	•	datatype: Specifies 'lmdb' for LMDB format or 'img' for image files.
+	•	l_resolution and r_resolution: Low and high resolutions for the dataset.
+	•	split: Either 'train' or 'val', indicating the dataset split.
+	•	data_len: Optional limit on the dataset length this is useful for debugging or evaluation.
+	•	need_LR: Whether to include low-resolution images in the output (only for mode 'LRHR').
+
+## Training 
+```bash
+# Use sr.py and sample.py to train the super resolution task and unconditional generation task, respectively.
+# Edit json files to adjust network structure and hyperparameters
+python sr.py --phase train --config config/sr_sr3_14_28.json -enable_wandb -log_wandb_ckpt -debug
+```
+
+
+
+
+

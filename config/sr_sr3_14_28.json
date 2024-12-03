@@ -23,7 +23,8 @@
             "batch_size": 16,
             "num_workers": 8,
             "use_shuffle": true,
-            "data_len": -1 // -1 represents all data used in train
+            "data_len": 10, // -1 represents all data used in train
+            "scale": "L" // L: grayscale, RGB: rgb
         },
         "val": {
             "name": "mnist_val",
@@ -32,15 +33,16 @@
             "datatype": "lmdb", //lmdb or img, path of img files
             "l_resolution": 14,
             "r_resolution": 28,
-            "data_len": 50
+            "data_len": 50,
+            "scale": "L" // L: grayscale, RGB: rgb
         }
     },
     "model": {
         "which_model_G": "sr3", // use the ddpm or sr3 network structure
         "finetune_norm": false,
         "unet": {
-            "in_channel": 6,
-            "out_channel": 3,
+            "in_channel": 2, // 6 for RGB, 2 for grayscale
+            "out_channel": 3, // 3 for RGB, 1 for grayscale
             "inner_channel": 64,
             "norm_groups": 16,
             "channel_multiplier": [
@@ -74,7 +76,7 @@
         },
         "diffusion": {
             "image_size": 512,
-            "channels": 3, //sample channel
+            "channels": 1, //sample channel 3 for RGB, 1 for grayscale
             "conditional": true // unconditional generation or unconditional generation(super_resolution)
         }
     },

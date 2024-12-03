@@ -31,9 +31,19 @@ def create_dataset(dataset_opt, phase):
                 r_resolution=dataset_opt['r_resolution'],
                 split=phase,
                 data_len=dataset_opt['data_len'],
-                need_LR=(mode == 'LRHR')
+                need_LR=(mode == 'LRHR'),
+                scale = dataset_opt['scale']
                 )
     logger = logging.getLogger('base')
     logger.info('Dataset [{:s} - {:s}] is created.'.format(dataset.__class__.__name__,
                                                            dataset_opt['name']))
     return dataset
+
+
+# parameters of create_dataset:
+    # • dataroot: Path to the dataset (can be a folder for images or an LMDB database).
+	# •	datatype: Specifies 'lmdb' for LMDB format or 'img' for image files.
+	# •	l_resolution and r_resolution: Low and high resolutions for the dataset.
+	# •	split: Either 'train' or 'val', indicating the dataset split.
+	# •	data_len: Optional limit on the dataset length.
+	# •	need_LR: Whether to include low-resolution images in the output (only for mode 'LRHR').
