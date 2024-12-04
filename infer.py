@@ -1,6 +1,7 @@
 import torch
 import data as Data
 import model as Model
+import numpy as np
 import argparse
 import logging
 import core.logger as Logger
@@ -82,12 +83,15 @@ if __name__ == "__main__":
                 Metrics.save_img(
                     Metrics.tensor2img(sr_img[iter]), '{}/{}_{}_sr_{}.png'.format(result_path, current_step, idx, iter))
         else:
-            # grid img
-            sr_img = Metrics.tensor2img(visuals['SR'])  # uint8
+            # Save the SR process as a grid
+            sr_img = visuals['SR']  # tensor (e.g., torch.Size([11, 1, 28, 28]))
+            sr_images = [Metrics.tensor2img(img) for img in sr_img]  # Convert all tensors to numpy
+            sr_process = np.concatenate(sr_images, axis=1)  # Concatenate spatially (horizontal stack for grid effect)
+            Metrics.save_img(sr_process, '{}/{}_{}_sr_process.png'.format(result_path, current_step, idx))
+
+            # Save the final SR image
             Metrics.save_img(
-                sr_img, '{}/{}_{}_sr_process.png'.format(result_path, current_step, idx))
-            Metrics.save_img(
-                Metrics.tensor2img(visuals['SR'][-1]), '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
+            Metrics.tensor2img(visuals['SR'][-1]), '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
 
         Metrics.save_img(
             hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))

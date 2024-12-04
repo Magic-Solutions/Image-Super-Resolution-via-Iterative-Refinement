@@ -5,33 +5,46 @@ import cv2
 from torchvision.utils import make_grid
 
 
+from torchvision.utils import make_grid
+import numpy as np
+import math
+
 def tensor2img(tensor, out_type=np.uint8, min_max=(-1, 1)):
     '''
     Converts a torch Tensor into an image Numpy array
-    Input: 4D(B,(3/1),H,W), 3D(C,H,W), or 2D(H,W), any range, RGB or grayscale
-    Output: 3D(H,W,C) or 2D(H,W), [0,255], np.uint8 (default)
+    Input: 4D(B, 1, H, W) for grayscale, 4D(B, 3, H, W) for RGB
+    Output: 3D(H, W, C) or 2D(H, W) for grayscale
     '''
-    tensor = tensor.squeeze().float().cpu().clamp_(*min_max)  # Clamp values
-    tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # Normalize to [0,1]
+    tensor = tensor.squeeze().float().cpu().clamp_(*min_max)  # Clamp
+    tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # Normalize to [0, 1]
+
     n_dim = tensor.dim()
     if n_dim == 4:  # Batch of images
         n_img = len(tensor)
         img_np = make_grid(tensor, nrow=int(math.sqrt(n_img)), normalize=False).numpy()
-        img_np = np.transpose(img_np, (1, 2, 0))  # HWC
-    elif n_dim == 3:  # Single image with channels
+        if tensor.shape[1] == 1:  # Grayscale
+            img_np = np.transpose(img_np, (1, 2, 0))  # HWC, Grayscale (last channel is 1)
+            img_np = img_np[:, :, np.newaxis]  # Add channel for OpenCV
+        else:  # RGB
+            img_np = np.transpose(img_np, (1, 2, 0))  # HWC, RGB
+    elif n_dim == 3:  # Single image
         img_np = tensor.numpy()
-        img_np = np.transpose(img_np, (1, 2, 0))  # HWC
+        if tensor.shape[0] == 1:  # Grayscale
+            img_np = np.transpose(img_np, (1, 2, 0))  # HWC, Grayscale
+            img_np = img_np[:, :, np.newaxis]  # Add channel for OpenCV
+        else:  # RGB
+            img_np = np.transpose(img_np, (1, 2, 0))  # HWC, RGB
     elif n_dim == 2:  # Single grayscale image
         img_np = tensor.numpy()
-        img_np = np.expand_dims(img_np, axis=-1)  # Add channel dimension for consistency
     else:
-        raise TypeError(f'Unsupported tensor dimension: {n_dim}')
+        raise TypeError(f"Only support 4D, 3D, and 2D tensors. Got dimension: {n_dim}")
+
     if out_type == np.uint8:
         img_np = (img_np * 255.0).round()  # Scale to [0, 255]
     return img_np.astype(out_type)
 
 
-def save_img(img, img_path, mode='RGB'):
+def save_img(img, img_path):
     '''
     Saves an image to the specified path
     Supports RGB and grayscale images.

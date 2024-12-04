@@ -119,8 +119,6 @@ if __name__ == "__main__":
                         hr_img = Metrics.tensor2img(visuals['HR'])  # uint8
                         lr_img = Metrics.tensor2img(visuals['LR'])  # uint8
                         fake_img = Metrics.tensor2img(visuals['INF'])  # uint8
-                        print(f"Shapes - Fake_img: {fake_img.shape}, SR_img: {sr_img.shape}, HR_img: {hr_img.shape}")
-
                         # generation
                         Metrics.save_img(
                             hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))
@@ -181,49 +179,53 @@ if __name__ == "__main__":
         idx = 0
         result_path = '{}'.format(opt['path']['results'])
         os.makedirs(result_path, exist_ok=True)
-        for _,  val_data in enumerate(val_loader):
+        for _, val_data in enumerate(val_loader):
             idx += 1
             diffusion.feed_data(val_data)
             diffusion.test(continous=True)
             visuals = diffusion.get_current_visuals()
 
+            # Convert visuals to images
             hr_img = Metrics.tensor2img(visuals['HR'])  # uint8
             lr_img = Metrics.tensor2img(visuals['LR'])  # uint8
             fake_img = Metrics.tensor2img(visuals['INF'])  # uint8
 
             sr_img_mode = 'grid'
             if sr_img_mode == 'single':
-                # single img series
-                sr_img = visuals['SR']  # uint8
+                # Single img series
+                sr_img = visuals['SR']  # Torch tensor
                 sample_num = sr_img.shape[0]
-                for iter in range(0, sample_num):
+                for iter in range(sample_num):
                     Metrics.save_img(
-                        Metrics.tensor2img(sr_img[iter]), '{}/{}_{}_sr_{}.png'.format(result_path, current_step, idx, iter))
+                        Metrics.tensor2img(sr_img[iter]), 
+                        '{}/{}_{}_sr_{}.png'.format(result_path, current_step, idx, iter)
+                    )
             else:
-                # grid img
-                sr_img = Metrics.tensor2img(visuals['SR'])  # uint8
+                # Save the SR process as a grid
+                sr_img = visuals['SR']  # tensor (e.g., torch.Size([11, 1, 28, 28]))
+                sr_images = [Metrics.tensor2img(img) for img in sr_img]  # Convert all tensors to numpy
+                sr_process = np.concatenate(sr_images, axis=1)  # Concatenate spatially (horizontal stack for grid effect)
+                Metrics.save_img(sr_process, '{}/{}_{}_sr_process.png'.format(result_path, current_step, idx))
+    
+                # Save the final SR image
                 Metrics.save_img(
-                    sr_img, '{}/{}_{}_sr_process.png'.format(result_path, current_step, idx))
-                Metrics.save_img(
-                    Metrics.tensor2img(visuals['SR'][-1]), '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
+                Metrics.tensor2img(visuals['SR'][-1]), '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
 
-            Metrics.save_img(
-                hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))
-            Metrics.save_img(
-                lr_img, '{}/{}_{}_lr.png'.format(result_path, current_step, idx))
-            Metrics.save_img(
-                fake_img, '{}/{}_{}_inf.png'.format(result_path, current_step, idx))
+            # Save HR, LR, and INF images
+            Metrics.save_img(hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))
+            Metrics.save_img(lr_img, '{}/{}_{}_lr.png'.format(result_path, current_step, idx))
+            Metrics.save_img(fake_img, '{}/{}_{}_inf.png'.format(result_path, current_step, idx))
 
-            # generation
+            # Generation evaluation
             eval_psnr = Metrics.calculate_psnr(Metrics.tensor2img(visuals['SR'][-1]), hr_img)
             eval_ssim = Metrics.calculate_ssim(Metrics.tensor2img(visuals['SR'][-1]), hr_img)
 
             avg_psnr += eval_psnr
             avg_ssim += eval_ssim
 
+            # Log evaluation data to WandB if enabled
             if wandb_logger and opt['log_eval']:
                 wandb_logger.log_eval_data(fake_img, Metrics.tensor2img(visuals['SR'][-1]), hr_img, eval_psnr, eval_ssim)
-
         avg_psnr = avg_psnr / idx
         avg_ssim = avg_ssim / idx
 
