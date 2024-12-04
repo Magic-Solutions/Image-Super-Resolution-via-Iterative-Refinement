@@ -50,17 +50,17 @@ if __name__ == "__main__":
     else:
         wandb_logger = None
 
-    # dataset
+
+    logger.info("Starting dataset initialization...")
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train' and args.phase != 'val':
             train_set = Data.create_dataset(dataset_opt, phase)
-            train_loader = Data.create_dataloader(
-                train_set, dataset_opt, phase)
+            train_loader = Data.create_dataloader(train_set, dataset_opt, phase)
         elif phase == 'val':
             val_set = Data.create_dataset(dataset_opt, phase)
-            val_loader = Data.create_dataloader(
-                val_set, dataset_opt, phase)
-    logger.info('Initial Dataset Finished')
+            val_loader = Data.create_dataloader(val_set, dataset_opt, phase)
+    logger.info("Initial Dataset Finished")
+
 
     # model
     diffusion = Model.create_model(opt)
@@ -78,6 +78,7 @@ if __name__ == "__main__":
     diffusion.set_new_noise_schedule(
         opt['model']['beta_schedule'][opt['phase']], schedule_phase=opt['phase'])
     if opt['phase'] == 'train':
+        logger.info('Begin Training.')
         while current_step < n_iter:
             current_epoch += 1
             for _, train_data in enumerate(train_loader):
@@ -118,6 +119,7 @@ if __name__ == "__main__":
                         hr_img = Metrics.tensor2img(visuals['HR'])  # uint8
                         lr_img = Metrics.tensor2img(visuals['LR'])  # uint8
                         fake_img = Metrics.tensor2img(visuals['INF'])  # uint8
+                        print(f"Shapes - Fake_img: {fake_img.shape}, SR_img: {sr_img.shape}, HR_img: {hr_img.shape}")
 
                         # generation
                         Metrics.save_img(

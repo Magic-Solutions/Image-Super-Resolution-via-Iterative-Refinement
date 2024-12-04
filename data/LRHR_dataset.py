@@ -7,7 +7,8 @@ import data.util as Util
 
 
 class LRHRDataset(Dataset):
-    def __init__(self, dataroot, datatype, l_resolution=16, r_resolution=128, split='train', data_len=-1, need_LR=False, scale = 'L'):
+    def __init__(self, dataroot, datatype, l_resolution=16, r_resolution=128, split='train', data_len=-1, need_LR=False, scale='L'):
+        self.dataroot = dataroot
         self.datatype = datatype
         self.l_res = l_resolution
         self.r_res = r_resolution
@@ -15,13 +16,14 @@ class LRHRDataset(Dataset):
         self.need_LR = need_LR
         self.split = split
         self.scale = scale
+        self.env = None  # Initialize LMDB environment as None
 
         if datatype == 'lmdb':
-            self.env = lmdb.open(dataroot, readonly=True, lock=False,
-                                 readahead=False, meminit=False)
-            # init the datalen
-            with self.env.begin(write=False) as txn:
-                self.dataset_len = int(txn.get("length".encode("utf-8")))
+            # Do not initialize LMDB here, to avoid issues with pickling in multiprocessing.
+            # Instead, initialize inside the worker process.
+            with lmdb.open(dataroot, readonly=True, lock=False, readahead=False, meminit=False) as temp_env:
+                with temp_env.begin(write=False) as txn:
+                    self.dataset_len = int(txn.get("length".encode("utf-8")))
             if self.data_len <= 0:
                 self.data_len = self.dataset_len
             else:
@@ -41,7 +43,13 @@ class LRHRDataset(Dataset):
                 self.data_len = min(self.data_len, self.dataset_len)
         else:
             raise NotImplementedError(
-                'data_type [{:s}] is not recognized.'.format(datatype))
+                f'data_type [{datatype}] is not recognized.')
+
+    def _init_lmdb(self):
+        """Initialize the LMDB environment inside the worker process."""
+        if self.env is None:
+            self.env = lmdb.open(self.dataroot, readonly=True, lock=False,
+                                 readahead=False, meminit=False)
 
     def __len__(self):
         return self.data_len
@@ -51,6 +59,7 @@ class LRHRDataset(Dataset):
         img_LR = None
 
         if self.datatype == 'lmdb':
+            self._init_lmdb()  # Ensure LMDB is initialized inside the worker
             with self.env.begin(write=False) as txn:
                 hr_img_bytes = txn.get(
                     'hr_{}_{}'.format(
@@ -65,9 +74,9 @@ class LRHRDataset(Dataset):
                         'lr_{}_{}'.format(
                             self.l_res, str(index).zfill(5)).encode('utf-8')
                     )
-                # skip the invalid index
-                while (hr_img_bytes is None) or (sr_img_bytes is None):
-                    new_index = random.randint(0, self.data_len-1)
+                # Handle invalid indices by skipping to another valid index
+                while hr_img_bytes is None or sr_img_bytes is None:
+                    new_index = random.randint(0, self.data_len - 1)
                     hr_img_bytes = txn.get(
                         'hr_{}_{}'.format(
                             self.r_res, str(new_index).zfill(5)).encode('utf-8')
@@ -90,6 +99,8 @@ class LRHRDataset(Dataset):
             img_SR = Image.open(self.sr_path[index]).convert(self.scale)
             if self.need_LR:
                 img_LR = Image.open(self.lr_path[index]).convert(self.scale)
+        
+        # Transform and augment data
         if self.need_LR:
             [img_LR, img_SR, img_HR] = Util.transform_augment(
                 [img_LR, img_SR, img_HR], split=self.split, min_max=(-1, 1))

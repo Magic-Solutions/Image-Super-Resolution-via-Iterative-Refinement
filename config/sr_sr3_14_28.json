@@ -1,9 +1,7 @@
 {
     "name": "distributed_high_sr_mnist",
     "phase": "train", // train or val
-    "gpu_ids": [
-        0,1
-    ],
+    "gpu_ids":[], //[0,1] for distributed training on 2 gpus
     "path": { //set the path
         "log": "logs",
         "tb_logger": "tb_logger",
@@ -20,8 +18,8 @@
             "datatype": "lmdb", //lmdb or img, path of img files
             "l_resolution": 14, // low resolution need to super_resolution
             "r_resolution": 28, // high resolution
-            "batch_size": 16,
-            "num_workers": 8,
+            "batch_size": 2,
+            "num_workers": 0,
             "use_shuffle": true,
             "data_len": 10, // -1 represents all data used in train
             "scale": "L" // L: grayscale, RGB: rgb
@@ -42,17 +40,17 @@
         "finetune_norm": false,
         "unet": {
             "in_channel": 2, // 6 for RGB, 2 for grayscale
-            "out_channel": 3, // 3 for RGB, 1 for grayscale
+            "out_channel": 1, // 3 for RGB, 1 for grayscale
             "inner_channel": 64,
             "norm_groups": 16,
             "channel_multiplier": [
                 1,
-                2,
-                4,
-                8,
+                2
+                //4,
+                //8,
                 // 8,
                 // 16,
-                16
+                //16
             ],
             "attn_res": [
                 // 16
@@ -75,13 +73,13 @@
             }
         },
         "diffusion": {
-            "image_size": 512,
+            "image_size": 28,
             "channels": 1, //sample channel 3 for RGB, 1 for grayscale
             "conditional": true // unconditional generation or unconditional generation(super_resolution)
         }
     },
     "train": {
-        "n_iter": 1000000,
+        "n_iter": 10,
         "val_freq": 1e4,
         "save_checkpoint_freq": 1e4,
         "print_freq": 50,
@@ -96,6 +94,6 @@
         }
     },
     "wandb": {
-        "project": "distributed_high_sr_ffhq"
+        "project": "mnsit_SR3"
     }
 }

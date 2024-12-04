@@ -27,10 +27,21 @@ def image_convert_bytes(img):
     return buffer.getvalue()
 
 
-def resize_multiple(img, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False):
+def resize_multiple(img, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False, scale='L'):
+    def add_channel_dimension(im):
+        if scale == 'L' and isinstance(im, Image.Image):  # Only for grayscale
+            im = np.expand_dims(np.array(im), axis=-1)  # Add channel dimension
+            return Image.fromarray(np.squeeze(im, axis=-1))  # Convert back to Image for consistency
+        return im
+
     lr_img = resize_and_convert(img, sizes[0], resample)
     hr_img = resize_and_convert(img, sizes[1], resample)
     sr_img = resize_and_convert(lr_img, sizes[1], resample)
+
+    if scale == 'L':  # Add channel dimension for grayscale images
+        lr_img = add_channel_dimension(lr_img)
+        hr_img = add_channel_dimension(hr_img)
+        sr_img = add_channel_dimension(sr_img)
 
     if lmdb_save:
         lr_img = image_convert_bytes(lr_img)
@@ -39,20 +50,22 @@ def resize_multiple(img, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=Fals
 
     return [lr_img, hr_img, sr_img]
 
-def resize_worker(img_file, sizes, resample, lmdb_save=False, scale = 'L'): # scale = 'L' for grayscale, 'RGB' for color
+def resize_worker(img_file, sizes, resample, lmdb_save=False, scale='L'):  # scale = 'L' for grayscale, 'RGB' for color
     img = Image.open(img_file)
     img = img.convert(scale)
-    out = resize_multiple(
-        img, sizes=sizes, resample=resample, lmdb_save=lmdb_save)
+    out = resize_multiple(img, sizes=sizes, resample=resample, lmdb_save=lmdb_save, scale=scale)
+
+    # Add channel dimension for grayscale images if not saving to LMDB
+    if not lmdb_save and scale == 'L':
+        out = [np.expand_dims(np.array(im), axis=-1) if isinstance(im, Image.Image) else im for im in out]
 
     return img_file.name.split('.')[0], out
 
 class WorkingContext():
-    def __init__(self, resize_fn, lmdb_save, out_path, env, sizes):
+    def __init__(self, resize_fn, lmdb_save, out_path, sizes):
         self.resize_fn = resize_fn
         self.lmdb_save = lmdb_save
         self.out_path = out_path
-        self.env = env
         self.sizes = sizes
         self.counter = RawValue('i', 0)
         self.counter_lock = Lock()
@@ -67,6 +80,11 @@ class WorkingContext():
             return self.counter.value
 
 def prepare_process_worker(wctx, file_subset):
+    # Initialize lmdb environment inside the worker process if lmdb_save is True
+    env = None
+    if wctx.lmdb_save:
+        env = lmdb.open(wctx.out_path, map_size=1024 ** 4, readahead=False)
+    
     for file in file_subset:
         i, imgs = wctx.resize_fn(file)
         lr_img, hr_img, sr_img = imgs
@@ -78,7 +96,7 @@ def prepare_process_worker(wctx, file_subset):
             sr_img.save(
                 '{}/sr_{}_{}/{}.png'.format(wctx.out_path, wctx.sizes[0], wctx.sizes[1], i.zfill(5)))
         else:
-            with wctx.env.begin(write=True) as txn:
+            with env.begin(write=True) as txn:
                 txn.put('lr_{}_{}'.format(
                     wctx.sizes[0], i.zfill(5)).encode('utf-8'), lr_img)
                 txn.put('hr_{}_{}'.format(
@@ -87,7 +105,7 @@ def prepare_process_worker(wctx, file_subset):
                     wctx.sizes[0], wctx.sizes[1], i.zfill(5)).encode('utf-8'), sr_img)
         curr_total = wctx.inc_get()
         if wctx.lmdb_save:
-            with wctx.env.begin(write=True) as txn:
+            with env.begin(write=True) as txn:
                 txn.put('length'.encode('utf-8'), str(curr_total).encode('utf-8'))
 
 def all_threads_inactive(worker_threads):
@@ -96,37 +114,30 @@ def all_threads_inactive(worker_threads):
             return False
     return True
 
-def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False, scale = 'RGB'):
+def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False, scale='RGB'):
     resize_fn = partial(resize_worker, sizes=sizes,
-                        resample=resample, lmdb_save=lmdb_save, scale = scale)
-    files = [p for p in Path(
-        '{}'.format(img_path)).glob(f'**/*')]
+                        resample=resample, lmdb_save=lmdb_save, scale=scale)
+    files = [p for p in Path(img_path).glob('**/*')]
 
     if not lmdb_save:
         os.makedirs(out_path, exist_ok=True)
         os.makedirs('{}/lr_{}'.format(out_path, sizes[0]), exist_ok=True)
         os.makedirs('{}/hr_{}'.format(out_path, sizes[1]), exist_ok=True)
         os.makedirs('{}/sr_{}_{}'.format(out_path,
-                    sizes[0], sizes[1]), exist_ok=True)
-    else:
-        env = lmdb.open(out_path, map_size=1024 ** 4, readahead=False)
+                                         sizes[0], sizes[1]), exist_ok=True)
 
     if n_worker > 1:
         # prepare data subsets
-        multi_env = None
-        if lmdb_save:
-            multi_env = env
-
         file_subsets = np.array_split(files, n_worker)
         worker_threads = []
-        wctx = WorkingContext(resize_fn, lmdb_save, out_path, multi_env, sizes)
+        wctx = WorkingContext(resize_fn, lmdb_save, out_path, sizes)
 
         # start worker processes, monitor results
         for i in range(n_worker):
             proc = Process(target=prepare_process_worker, args=(wctx, file_subsets[i]))
             proc.start()
             worker_threads.append(proc)
-        
+
         total_count = str(len(files))
         while not all_threads_inactive(worker_threads):
             print("\r{}/{} images processed".format(wctx.value(), total_count), end=" ")
@@ -145,6 +156,7 @@ def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBI
                 sr_img.save(
                     '{}/sr_{}_{}/{}.png'.format(out_path, sizes[0], sizes[1], i.zfill(5)))
             else:
+                env = lmdb.open(out_path, map_size=1024 ** 4, readahead=False)
                 with env.begin(write=True) as txn:
                     txn.put('lr_{}_{}'.format(
                         sizes[0], i.zfill(5)).encode('utf-8'), lr_img)
