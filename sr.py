@@ -39,6 +39,24 @@ if __name__ == "__main__":
     logger.info(Logger.dict2str(opt))
     tb_logger = SummaryWriter(log_dir=opt['path']['tb_logger'])
 
+      # Determine device
+    if args.gpu_ids and torch.cuda.is_available():
+        device_ids = [int(id) for id in args.gpu_ids]
+        device = torch.device(f'cuda:{device_ids[0]}')
+        torch.cuda.set_device(device)
+        device_message = f"Using CUDA on GPU(s): {device_ids}"
+    elif torch.cuda.is_available():
+        device = torch.device('cuda')
+        device_message = "Using default CUDA device."
+    else:
+        device = torch.device('cpu')
+        device_message = "Using CPU for computation."
+
+    # Log the device information
+    logger.info(f"Device selected for training: {device_message}")
+    tb_logger = SummaryWriter(log_dir=opt['path']['tb_logger'])
+
+
     # Initialize WandbLogger
     if opt['enable_wandb']:
         import wandb
