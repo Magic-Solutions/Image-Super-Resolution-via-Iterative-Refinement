@@ -128,6 +128,32 @@ if __name__ == "__main__":
                             lr_img, '{}/{}_{}_lr.png'.format(result_path, current_step, idx))
                         Metrics.save_img(
                             fake_img, '{}/{}_{}_inf.png'.format(result_path, current_step, idx))
+                        
+                        # Ensure all images have the same format (add a channel dimension for grayscale)
+                        def preprocess_image(img):
+                            if img.ndim == 2:  # Grayscale image (H, W)
+                                return np.expand_dims(img, axis=-1)  # Add channel dimension to make (H, W, 1)
+                            elif img.ndim == 3:  # RGB image (H, W, 3)
+                                return img  # No modification needed
+                            else:
+                                raise ValueError(f"Unsupported image dimensions: {img.shape}")
+
+                        # Preprocess images
+                        fake_img = preprocess_image(fake_img)
+                        sr_img = preprocess_image(sr_img)
+                        hr_img = preprocess_image(hr_img)
+
+                        # Concatenate along the channel axis
+                        concatenated_images = np.concatenate((fake_img, sr_img, hr_img), axis=-1)  # (H, W, C)
+                        print(f"Concatenated image shape: {concatenated_images.shape}")
+
+                        # Transpose if needed
+                        if concatenated_images.shape[-1] == 3:  # Check if it's already RGB-like
+                            transposed_images = concatenated_images  # No need for transposition
+                        else:  # Assume (H, W, C) where C > 3 (e.g., concatenated grayscale)
+                            transposed_images = np.transpose(concatenated_images, (2, 0, 1))  # HWC -> CHW
+                            print(f"Transposed image shape: {transposed_images.shape}")
+
                         tb_logger.add_image(
                             'Iter_{}'.format(current_step),
                             np.transpose(np.concatenate(
